@@ -1,3 +1,7 @@
 *.docx
+
 *.odt
+
 *.odt#
+
+doc/
