@@ -1150,10 +1150,393 @@ CALL get_orders(177, 'Shipped');
 
 
 
+-- 91. Parameter Validation
+DROP PROCEDURE IF EXISTS update_creditLimit;
+DELIMITER $$ 
+CREATE PROCEDURE update_creditLimit(customerNumber INT, creditLimit DECIMAL(10, 2))
+BEGIN
+	IF customerNumber NOT IN (SELECT c.customerNumber FROM customers c) THEN
+		SIGNAL SQLSTATE '22003'
+        SET MESSAGE_TEXT = 'Invalid customerNumber passed.';
+	ELSE IF creditLimit < 0 THEN 
+		SIGNAL SQLSTATE '22003'
+        SET MESSAGE_TEXT = 'Invalid creditLimit passed.';
+	END IF;
+    END IF;
+    UPDATE customers c
+    SET c.creditLimit = creditLimit
+    WHERE c.customerNumber = customerNumber;
+END $$
+DELIMITER ;
+
+CALL update_creditLimit(177, 123); # without error
+CALL update_creditLimit(177, -123); # error
+CALL update_creditLimit(15555, 123); # error
+
+SELECT *
+FROM customers
+WHERE customerNumber = 177;
+
+
+-- 92. Output Parameters
+DROP PROCEDURE IF EXISTS get_paied_customer;
+DELIMITER $$
+CREATE PROCEDURE get_paied_for_customer(
+	customerNumber INT, 
+    OUT n_payments INT, 
+    OUT total_payments DECIMAL(10, 2)
+)
+BEGIN 
+	SELECT COUNT(*), SUM(amount)
+    INTO n_payments, total_payments
+    FROM payments p
+    WHERE p.customerNumber = customerNumber;
+END $$
+DELIMITER ;
+
+SET @n_payments = 0; -- user-defined variables
+SET @total_payments = 0; -- user-defined variables
+CALL get_paied_for_customer(177, @n_payments, @total_payments);
+
+SELECT @n_payments, @total_payments;
+SELECT *
+FROM payments
+WHERE customerNumber = 177;
+
+# Note: Output parameters make the script complex.
+
+
+
+-- 93. Variables  
+# There are two types of user variables: 
+# 	1) User or session variable
+#	2) Local variable (used in functions of stored procedures)
+# Note: A variable cannot contain a table. Only a single value is allowd.
+
+# To create a user or session variable:
+SET @variable_name = 0;
+# Note: Stay in memory for the entire session, until the connection will be lost
+# Note: In case of using SET, you have to set it a value.
+
+
+# To create a local variable (example):
+DROP PROCEDURE IF EXISTS customers_with_score;
+DELIMITER $$
+CREATE PROCEDURE customers_with_score()
+BEGIN	
+	DECLARE score DECIMAL(10, 2) DEFAULT 0;
+    DECLARE maxCreditLimit DECIMAL(10, 2);
+    DECLARE minCreditLimit DECIMAL(10, 2);
+    
+    SET maxCreditLimit = (
+		SELECT MAX(creditLimit)
+        FROM customers 
+	);
+    
+    SET minCreditLimit = (
+		SELECT MIN(creditLimit)
+        FROM customers 
+    );
+    
+    SELECT *, creditLimit / (maxCreditLimit - minCreditLimit) AS score
+    FROM customers;
+END $$
+DELIMITER ;
+
+CALL customers_with_score();
+# Note: In case of using DECLARE, you can ignore defining the variable.
+# Note: If you don't set a defualt value for a local variable, it will be null
+# Note: As soon as the stored porcedure or function is finished, the local variables
+#		will be freed up.
 
 
 
 
+-- 94. Variables
+DROP PROCEDURE IF EXISTS get_average_payments;
+DELIMITER $$
+CREATE PROCEDURE get_average_payments(customerNumber INT)
+BEGIN
+	DECLARE total_payments DECIMAL(9, 2);
+    DECLARE n_payments INT;
+    
+    SELECT COUNT(*), SUM(amount)
+    INTO n_payments, total_payments
+    FROM payments p
+    WHERE p.customerNumber = customerNumber;
+    
+    SELECT total_payments / n_payments AS average_payments;
+END $$
+DELIMITER ;
+
+CALL get_average_payments(189);
+
+
+
+-- 95. Functions:
+# Note: Main difference between a stored procedure and function is 
+# 		the fact that s function can only return a single value, 
+# 		but stored porcedure can return a table as well.
+# Note: A function can be used in SELECT statement, like any other 
+#		built-in SQL functions.
+DROP FUNCTION IF EXISTS get_average_payments_func;
+DELIMITER $$
+CREATE FUNCTION get_average_payments_func(customerNumber INT) RETURNS DECIMAL(9, 2)
+READS SQL DATA
+BEGIN
+	DECLARE n_payments INT;
+    DECLARE total_payments DECIMAL(9, 2);
+    DECLARE average DECIMAL(9, 2);
+    
+    SELECT COUNT(*), SUM(amount)
+    INTO n_payments, total_payments
+    FROM payments p
+    WHERE p.customerNumber = customerNumber;
+    
+    SET average = (SELECT total_payments / n_payments);
+RETURN average;
+END $$
+DELIMITER ;
+
+SELECT customerNumber, 
+	   CONCAT(contactFirstName, ' ', contactLastName) AS customerName,
+       get_average_payments_func(customerNumber) AS averagePayments
+FROM customers;
+
+# Note: Syntax of function is very similar to stored procedure, with the following differences:
+# 		1) Return type declaration: 'RETURN DECIMAL(9, 2)'
+#		2) Attributes: 'DETERMINISTIC': if you give it the same input, it always return the same input.alter
+#					   'READS SQL DATA': use SELECT statement in the function
+#					   'MODIFIES SQL DATA': use INSERT, UPDATE, DELETE statements in the function
+#		3) Return: a single value should be returned.
+
+
+
+-- 96. Triggers
+# Trigger: A block of SQL code that automatically gets executed before 
+#		   or after an INSERT, UPDATE, or DELETE statements
+# Note: Dropping Triggers is like dropping stored procedures or functions
+# Note: In trigger, we are allowd to update any table except the table 
+#		the trigger is defined on. (e.g., in the following example, payment cannot be updated)
+
+DROP TRIGGER IF EXISTS updata_creditLimit_after_payment;
+DELIMITER $$
+CREATE TRIGGER update_creditLimit_after_payment
+AFTER INSERT ON payments
+FOR EACH ROW
+BEGIN
+	UPDATE customers
+    SET creditLimit = creditLimit + 0.1 * NEW.amount
+    WHERE customerNumber = NEW.customerNumber;
+END $$
+DELIMITER ;
+
+SELECT creditLimit
+FROM customers 
+WHERE customerNumber = 177; # 123.00
+
+INSERT INTO payments
+VALUES (177, 'JM556245', NOW(), 10000);
+
+SELECT creditLimit
+FROM customers 
+WHERE customerNumber = 177; # 1123.00
+
+# Note: Syntax of trigger is very similar to stored procedure, with the following differences:
+# 		1) No curly brackets () required.
+#		2) When to do insert: [BEFORE, AFTER] [INSERT, UPDATE, DELETE] ON <table_name>
+#		3) FOR EACH ROW
+
+
+
+-- 97. SHOW TRIGGERS
+SHOW TRIGGERS;
+SHOW TRIGGERS like 'payment%';
+
+
+
+-- 98. Using Triggers For Auditing
+# We can use triggers to log changes in a table.
+# First, create a table to log:
+CREATE TABLE payments_audit (
+	customerNumber INT            NOT NULL,
+    date           DATE           NOT NULL,
+    amount         DECIMAL(9, 2)  NOT NULL,
+    action_type    VARCHAR(50)    NOT NULL,
+    action_date    DATETIME       NOT NULL
+);
+
+# Next, create a table:
+DROP TRIGGER IF EXISTS updata_creditLimit_after_payment;
+DELIMITER $$
+CREATE TRIGGER updata_creditLimit_after_payment
+AFTER INSERT ON payments
+FOR EACH ROW
+BEGIN
+	UPDATE customers
+    SET creditLimit = creditLimit + 0.1 * NEW.amount
+    WHERE customerNumber = NEW.customerNumber;
+    
+    INSERT INTO payments_audit
+    VALUES (NEW.customerNumber, NEW.paymentDate, NEW.amount, 'Insert', NOW());
+END $$
+DELIMITER ;
+
+SELECT creditLimit
+FROM customers 
+WHERE customerNumber = 177; # 1123.00
+
+INSERT INTO payments
+VALUES (177, 'JM559785', NOW(), 10000);
+
+SELECT creditLimit
+FROM customers 
+WHERE customerNumber = 177; # 3123.00
+
+SELECT * 
+FROM payments_audit; # log added
+
+# Note: If the action of the trigger is deleting (instead of update),
+#		you should use ODL instead of NEW.
+# Note: We don't create an audit table for each table and each action,
+# 		We should have a general audit table.
+
+
+
+-- 99. Triggers For Auditing
+DROP TRIGGER IF EXISTS update_creditLimit_after_payment_delete;
+DELIMITER $$
+CREATE TRIGGER update_creditLimit_after_payment_delete
+AFTER DELETE ON payments
+FOR EACH ROW
+BEGIN
+	UPDATE customers
+    SET creditLimit = creditLimit - 0.1 * OLD.amount
+    WHERE customerNumber = OLD.customerNumber;
+    
+    INSERT INTO payments_audit
+    VALUES (OLD.customerNumber, OLD.paymentDate, OLD.amount, 'Delete', NOW());
+END $$
+DELIMITER ;
+
+SELECT creditLimit
+FROM customers
+WHERE customerNumber = 177; # 3123.0
+
+DELETE FROM payments
+WHERE checkNumber = 'JM559785';
+
+SELECT creditLimit
+FROM customers
+WHERE customerNumber = 177; # 2123.0
+
+SELECT *
+FROM payments_audit;
+
+
+
+
+-- 100. 
+SHOW VARIABLES LIKE 'event%';
+SET GLOBAL event_scheduler = ON;
+
+
+
+
+
+-- 101. 
+DROP EVENT IF EXISTS yearly_delete_audit_rows;
+DELIMITER $$ 
+CREATE EVENT yearly_delete_audit_rows
+ON SCHEDULE 
+EVERY 1 YEAR STARTS NOW() ENDS DATE_ADD(NOW(), INTERVAL 10 YEAR)
+DO
+BEGIN 
+	DELETE FROM payment_audit
+    WHERE action_date < NOW() - INTERVAL 1 YEAR;
+END $$
+DELIMITER ;
+
+
+-- 102. SHOW EVENTS
+SHOW EVENTS;
+SHOW EVENTS LIKE 'pattern';
+
+
+-- 103. ALTER EVENT
+DELIMITER $$ 
+ALTER EVENT yearly_delete_audit_rows
+ON SCHEDULE 
+EVERY 6 MONTH STARTS NOW() ENDS DATE_ADD(NOW(), INTERVAL 10 YEAR)
+DO
+BEGIN 
+	DELETE FROM payment_audit
+    WHERE action_date < NOW() - INTERVAL 1 YEAR;
+END $$
+DELIMITER ;
+
+
+-- 104. ALTER EVENT (DISABLE/ENABLE)
+ALTER EVENT yearly_delete_audit_rows DISABLE;
+ALTER EVENT yearly_delete_audit_rows ENABLE;
+
+
+-- 105. DROP EVENT
+DROP EVENT IF EXISTS yearly_delete_audit_rows;
+
+
+
+-- 106. TRANSACTION
+# Definition: A group of SQL statement that reperesent a single uint if work.
+# 			  Used when we want to do multiple chages to the database and we want 
+#			  all changes to be successful or to fail together as a signle unit.
+# Note: In a transaction, 
+# 		if we encounter with an error: none of the statements take place
+#		if we don't encounter with an error: all statements take place.
+# Properites: ACID
+# 			Atomicity
+#			Consistancy
+# 			Isolation
+# 			Durability
+
+
+
+-- 107. Creating Transactions
+# General Structure:
+# > START TRANSACTION;
+# > QUERIES...
+# > COMMIT; or ROLLBACK; 
+
+# COMMIT: apply all changes if we didn't encounterd with any error
+# ROLLBACK: roll back even if we didn't encounter with any error
+
+# Note: MySQL automatically wraps any statement in a transaction,
+# 		if it didn't have any error, it will commit the statement.
+# 		To see whether this option is ON or OFF:
+SHOW VARIABLES LIKE 'autocommit';
+# 		To turn if off:
+SET GLOBAL autocommit = OFF;
+# 		To turn if on:
+SET GLOBAL autocommit = ON;
+
+
+START TRANSACTION;
+INSERT INTO orders
+VALUES (10500, NOW(), DATE_ADD(NOW(), INTERVAL 3 DAY), NULL, 'On Hold', NULL, 177);
+INSERT INTO orderdetails
+VALUES (10500, 'S10_4757', 100, 200, 3);
+COMMIT;
+
+SELECT *
+FROM orders
+WHERE orderNumber = 10500;
+
+SELECT *
+FROM orderdetails
+WHERE orderNumber = 10500;
+
+
+-- 108. 
 
 
 
