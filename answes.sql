@@ -1536,13 +1536,89 @@ FROM orderdetails
 WHERE orderNumber = 10500;
 
 
--- 108. 
+-- 108. Concurrency and Locking
+# Multiple users want to access or modify the same data at the same time
+# If multiple users want to modify a sigle row at the same time,
+# by using transactions, SQL stop the second user who wants to modify 
+# until the transaction of the first user is not commited.
+# Most of the time, the default behavior works well, but sometime it is not
+# enough and we need to overwrite the default behaior.
+
+# Query of file script1.sql
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = creditLimit + 100
+WHERE customerNumber = 177;
+COMMIT;
+
+# Query of file script2.sql
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = creditLimit + 100
+WHERE customerNumber = 177;
+COMMIT;
+
+# Second transaction waits until the first transaction commit.
+
+
+-- 109. Concurrency and Locking
+# Query of file script1.sql
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = creditLimit + 100
+WHERE customerNumber = 177;
+COMMIT;
+
+# Query of file script2.sql
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = creditLimit + 100
+WHERE customerNumber = 188;
+COMMIT;
+
+# Both queries execute without one waiting for the other.
+
+
+
+-- 110. Concurrency Problems (Lost Update)
+# If transaction of user B commits last, we will lose the update 
+# made by transaction of the user A.
+# The transaction that commits last will overwrite the changes
+# made earlier. To solve the problem, we use LUX.
+
+# Query of file script1.sql
+USE classicmodels;
+START TRANSACTION;
+UPDATE customers
+SET contactFirstName = 'Amir'
+WHERE customerNumber = 177;
+COMMIT;
+
+# Query of file script2.sql
+USE classicmodels;
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = creditLimit + 100
+WHERE customerNumber = 177;
+COMMIT;
 
 
 
 
-
-
-
+-- 111. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 
 
