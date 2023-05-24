@@ -1580,14 +1580,8 @@ COMMIT;
 
 
 
--- 110. Concurrency Problems (Lost Update)
-# If transaction of user B commits last, we will lose the update 
-# made by transaction of the user A.
-# The transaction that commits last will overwrite the changes
-# made earlier. To solve the problem, we use LUX.
-
+-- 110. Concurrency and Locking
 # Query of file script1.sql
-USE classicmodels;
 START TRANSACTION;
 UPDATE customers
 SET contactFirstName = 'Amir'
@@ -1595,7 +1589,6 @@ WHERE customerNumber = 177;
 COMMIT;
 
 # Query of file script2.sql
-USE classicmodels;
 START TRANSACTION;
 UPDATE customers
 SET creditLimit = creditLimit + 100
@@ -1603,22 +1596,328 @@ WHERE customerNumber = 177;
 COMMIT;
 
 
+-- 111. Concurrency Problems (Lost Update)
+# If transaction of user B commits last, we will lose the update 
+# made by transaction of the user A.
+# The transaction that commits last will overwrite the changes
+# made earlier. To solve the problem, we use LUX. By using LUX, 
+# second user is not allowed to make any change on the row that 
+# first user is changing and not commited yet. 
+# (MySQL take care of this problem by default)
+# SOLUTION: LUX (default behavore)
 
 
--- 111. 
+-- 112. Concurrency Problems (Dirty Reads)
+# When a transaction reads data that hasn't commited yet, 
+# the read data is not valid yet. 
+# SOLUTION: Set transaction isolation level to "READ COMMITED"
+
+
+
+
+
+-- 113. Concurrency Problems (Non-repeating Reads)
+# Getting different results for the same entry of during the
+# execution of a query.
+# SOLUTION: Set transaction isolation level to REPEATABLE READ
+# NOTE: Defalut transaction isolation level is REPEATABLE READ
+
+
+
+
+
+-- 114. Concurrency Problems (Phantom Reads)
+# We want to include all records that satisfies the same
+# condition, if during the process any of the records change,
+# the result is not valid.
+# SOLUTION: Based on the application, solution may change.
+# 			If dropping one or two records is acceptable, do nothing, 
+#			If we shouldn't neglect any record, set transaction isolation
+# 			level to SERIALIZABLE. 
+# 			By doing so, no two query execute at the same time. (no parallelism)
+
+
+
+-- 115. Transaction Isolation Level
+# TO handle the problems of concurrency, SQL offers a concept, Transaction Isolation Levels:
+# 1) READ UNCOMMITED      
+# 2) READ COMMITED         
+# 3) REPEATABLE READS (default)   
+# 4) SERIALIZABLE         
+# Top to down: Better Protection
+#			   Slower
+#			   Fewer Concurrency Problems
+# 			   More LUX
+# 			   Less Scalablility
+#			   Less Performance
+# 			   Extra Resources
+ 
+# NOTES:
+# 		If and only if you want to prevent phantom reads, use SERIALIZABLE
+# 		Use READ COMMITED or READ UNCOMMITED in situations where you 
+# 		1) don't need precise consistancy 
+#		2) when you are dealing with data that is rarely updated
+# 		3) if you want to achive better performance
+
+# To see the current isolation level:
+SHOW VARIABLES LIKE 'transaction_isolation';
+
+# To set isolation level (only for the next transaction):
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; # [or READ UNCOMMITED, READ COMMITED, SERIALIZABLE]
+
+# To set isolation level (for all future transactions/current session/connectino)
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+# To set isolation level for all sessions/connections:
+SET GLOBAL TRANSACTION ISOLATION LEVEL REPEATABLE READ;  
+
+# NOTE: 
+# + -> Concurrency Problem    
+# - -> No Concurrency Problem
+# 				     | Lost Update | Dirty Reads | Non-repeating Reads | Phantom Reads
+# -------------------------------------------------------------------------------------		
+# READ UNCOMMITED    |      +      |       +     |        +            |       +
+# READ COMMITED      |      +      |       -     |        +            |       + 
+# REPEATABLE READS   |      -      |       -     |        -            |       +
+# SERIALIZABLE       |      -      |       -     |        -            |       -
+
+
+
+-- 116. Dirty Read Solution
+# Put the following script in new session (session#1):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT creditLimit 
+FROM customers 
+WHERE customerNumber = 177;
+
+# Put the following script on another session (session#2):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+START TRANSACTION;
+UPDATE customers
+SET creditLimit = 100
+WHERE customerNumber = 177;
+COMMIT;
+
+# If you call script in the session#1 before committing the transaction in the 
+# session#2, you get the update value, which is not desired.
+# To solve the problem, use READ COMMITED transaction isolation level, instead of 
+# READ UMCOMMITED transaction isolation level.
+
+
+-- 117. Non-repeating Read Solution
+# Put the following script in new session (session#1):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION;
+SELECT * 
+FROM customers
+WHERE state = 'PA';
+COMMIT;
+
+# Put the following script on another session (session#2):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION;
+UPDATE customers
+SET state = 'PA'
+WHERE customerNumber = 187;
+COMMIT;
+ 
+# If you execute query in transaction of session#1 but not commit the transaction,
+# then execute entire script in session#2, you will get different result if you execute
+# query in transaction of the first session. 
+# To solve the problem, set REPEATABLE READ transaction isolation level, instead of 
+# READ COMMITED transaction isolation level.
+
+
+
+-- 118. Phantom Reads Solution:
+# Put the following script in new session (session#1):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION;
+SELECT * 
+FROM customers
+WHERE state = 'PA';
+COMMIT;
+
+
+# Put the following script on another session (session#2):
+USE classicmodels;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION;
+UPDATE customers
+SET state = 'PA'
+WHERE customerNumber = 144;
+COMMIT;
+SELECT * FROM customers;
+
+# If you execute first 6 lines of the frist session, you will able to execute the transaction of the second session, 
+# if we want to prevent this from happening, we should set SERIALIZABLE transaction isolation level instead of REPEATABLE READ 
+
+
+
+-- 119. Deadlock
+# Problem: Different transactions cannot complete because each transaction holds a lock at other needs. 
+# So, several transactions keep waiting for each other and none of them release their key.
+
+# SQL Approach to Solve Deadlock: In case of deadlock, the transaction that led to the deadlock will be a victom and SQL
+# will roll it back.
+
+# NOTE: In general, they are not a big issue, unless they happen frequently.
+
+# Minimizing Deadlock:
+# 	1) Try not to have reverse update
+# 	2) Keep your transaction small and short duration. 
+# 	3) Executing queries that takes a long time to execute increase the possibility of deadlock,
+#	   Try to schedule these time-consuming queries during non-pick hours, when the server has low load. 
+
+
+-- 120. Reverse Update
+# Problem: A kind of deadlock, which two (or more) sessions want to update same recordes in a reverse order.
+# Example:
+# In session#1:
+USE classicmodels; # step#1
+START TRANSACTION; # step#2
+UPDATE customers SET creditLimit = 123 WHERE customerNumber = 177; # step#3
+UPDATE customers SET state = 'NY' WHERE customerNumber = 144; # step#8 (deadlock will happen)
+COMMIT;
+
+# In session#2:
+USE classicmodels; # step#4
+START TRANSACTION; # step#5
+UPDATE customers SET state = 'NY' WHERE customerNumber = 144; # step#6
+UPDATE customers SET creditLimit = 123 WHERE customerNumber = 177; # step#7
+COMMIT;
+
+# If you execute in specified order, in the 8th step a deadlock will take place. 
  
  
+-- 121. Data Types
+# SQL has different data types:
+# 	1) String Type
+# 	2) Numeric Types
+# 	3) Date and Time Types
+# 	4) Blob Types (string binary types)
+# 	5) Special Types (e.g., Storing Geometric or Geographical Values)
+
+-- 122. String Data Types
+# Fixed-length String (n chars):
+# CHAR(n)
+
+# Variable-length String (maximun of n chars):
+# VARCHAR(n)
+
+# Larger String Type:
+# MEDIUMTEXT()
+
+# Even Larger String Type:
+# LONGTEXT()
+
+# To store Small Strings:
+# TINYTEXT()
+
+# Another String Data Type:
+# TEXT()
+
+# NOTE: Numerical values like ZipCode or phone number are prefered to be stored as
+# 		string type, because we don't want to do mathematical operations on them.
+
+# NOTE: Maximum size of VARCHAR is about 64KB (65535 chars)
+# 		Maximum size of MEDIUMTEXT is 16 MB (sutible for storing JSON, CSV string, book, so on)
+# 		Maximum size of LONGTEXT is up to 4GB (sutible for log files or textbooks)
+# 		Maximum size of TINYTEXT is up to 255 Bytes 
+# 		Maximum size of TEXT is up to 64KB
+
+
+-- 123. Integer Data Types
+# TINYINT: 				1 Byte 	(from -128 to 127)
+# UNSIGNED TINYINT: 	1 Byte 	(from 0 to 255)
+# SMALLINT: 			2 Bytes (from ~-32K to ~32K)
+# MEDIUMINT: 			3 Bytes (from ~-8M to ~8M)
+# INT: 					4 Bytes (from ~-2B to ~2B)
+# BIGING: 				8 Bytes (from ~-9Z to ~9Z)
+
+# NOTE: Use the smallest integer data type possible
+
+
+
+-- 124. Floating-point and Fixed-point Data Types
+# Fixed Points: DECIMAL(precision, scale)
+# 				precision is the maxinum number of digits (1 < precision < 65)
+# 				scale is the number of digits after the decimal point
+
+# Floating Point: FLOAT  4 Bytes
+#       	      Double 8 Bytes 
+
+# NOTE: Floating-point data types are sutible for very large or very small 
+# 		fractional numbers, used for scienfific applications.
+
+
+-- 125. Boolean Data Types
+# To use boolean data typ, use BOOL or BOOLEAN data types, which only accept two values, true(1) or false(0)
+
+
+
+-- 126. ENUM Data Type
+# A data type that only accepts special values
+# For example, ENUM('small', 'medium', 'large') only accepts three values: small, medium, or large
+# NOTE: Try not to use them, because: 
+# 		Changing the numbers of an ENUM type can be expensive, specially for large tables
+# 		ENUMs are not reusable, i.e., we cannot use them in other tables. So changing in one place leads to chnage in multiple places.
+
+# NOTE: Instead of using ENUMs, save an ID for any option of ENUM, then create a new table that contains name of any option for any ID.
+# 		The separate table is usually called lookup table.
+
+
+-- 127. SET Data Type
+# A data type that can have multiple items
+# For example, SET('value1', 'value2', ...)
+# For the same reason of not useing ENUM, this data type is also not recommended to use. 
+# Instead, use a lookup talbe.
+
+
+-- 128. Date and Time Data Types
+# DATE: 		Date Data Type
+# TIME: 		Time Data Type
+# DATETIME: 	Date and time (8 Bytes | can go beyond the year 2038)
+# TIMESTAMP: 	Mostly used for last update or insertion time (4 Bytes | up to the year 2038)
+# YEAR: 		Only year
+
+
+-- 129. BLOB Data Type
+# Mostly used for large amount of binary data, such as images, videos, pdfs, ...
+# Types:
+# 	TINYBLOB: 	Up to 255 Bytes
+# 	BLOB: 		Up to 65 KB
+# 	MEDIUMBLOB: Up to 16 MB
+# 	LONGBLOB:   Up to 4GB
+
+# NOTE: Using BLOB files can result in:
+# 		Increase Database Size
+# 		Slower Backup
+# 		Performace Problem
+# 		More Code to Read/Write Images
+
+# NOTE: It is better to use your files out of your datebases, 
+# 		because relational databases are designed to store 
+# 		structured relational data, not large binary files.
+
+
+-- 130. JSON Data Types
+# JSON is a lightwaight format for storing and transforming data over the internet. 
+# There is a data type in SQL for storing content of JSON files.
+
+
+
+-- 131. 
  
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
+
+
+
+
+
 
 
