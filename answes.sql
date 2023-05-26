@@ -458,11 +458,12 @@ VALUES (3, 'amirvahedi', 'AMIR', 'VAHEDI', '091234656789', 'abc', 'Tehran', 'IRA
 
 -- 45. Inserting Hierarical Rows
 INSERT INTO orders (orderNumber, orderDate, requiredDate, status, customerNumber)
-VALUES (12, '2023-04-18', '2023-04-23', 'shipped', 1);
+VALUES (14, '2023-04-18', '2023-04-23', 'shipped', 1);
 
 INSERT INTO orderdetails (orderNumber, productCode, quantityOrdered, priceEach, orderLineNumber)
-VALUES (12, 'S10_1678', 2, 200, 3);
-
+VALUES (14, 'S10_1678', 2, 200, 3);
+# NOTE: IF the ID column is auto-increamental (AI), then you can use a method called LAST_INSERT_ID() to 
+# 		get the id of the last inserted record. (only available if AI is on)
 
 -- 46. Creating a copy of a table
 CREATE TABLE orders_archived AS 
@@ -470,9 +471,11 @@ SELECT * FROM orders;
 # Note: In the copied table, we don't have a primay key and it is not auto incrimental
 # Note: The second line of the above query is a sub-query, as a part of another query.
 
-
 -- 47. Deleting rows and adding selected rows
-DELETE FROM orders_archived; # require safe mode to be disabled
+DELETE FROM orders_archived 
+WHERE orderNumber = '10101'; # require safe mode to be disabled
+
+DELETE FROM orders_archived; # this will remove all records in the table
 
 INSERT INTO orders_archived
 	(SELECT *
@@ -487,8 +490,6 @@ SELECT p.checkNumber, c.customerNumber, c.contactFirstName, c.contactLastName
 FROM customers c
 INNER JOIN payments p USING (customerNumber)
 WHERE p.paymentDate < '2004-01-01';
-
-
 
 
 -- 49. Update single row
@@ -507,7 +508,6 @@ UPDATE orders
 SET requiredDate = DATE_ADD(requiredDate, INTERVAL 1 DAY)
 WHERE status = 'Cancelled';
 
-SELECT * FROM customers;
 
 -- 52. Update table + Subqueries
 UPDATE customers
@@ -517,7 +517,8 @@ WHERE customerNumber = (
 	FROM customers
 	INNER JOIN orders o USING (customerNumber)
 	ORDER BY o.orderDate
-	LIMIT 1); -- >> Error
+	LIMIT 1
+); -- >> Error
 
 # Correct Query
 UPDATE customers
@@ -533,7 +534,6 @@ WHERE customerNumber = (
     ) AS t
 );
 # Note: If the subquery returns more than one value, you should use IN operator instead of =
-
 
 SELECT creditLimit 
 FROM customers 
@@ -558,7 +558,6 @@ WHERE customerNumber IN (
 		WHERE o.status = 'Cancelled'
     ) AS t
 );
-
 
 SELECT customerNumber, creditLimit
 FROM customers
@@ -642,6 +641,11 @@ WHERE productCode NOT IN (
 	INNER JOIN orderdetails od USING (productCode)
 );
 
+# Equivalent Query 
+SELECT *
+FROM products
+LEFT JOIN orderdetails USING(productCode)
+WHERE orderNumber IS NULL;
 
 
 
@@ -1009,6 +1013,8 @@ CREATE OR REPLACE VIEW special_customers AS (
 
 
 -- 84. Updateable Views
+# Updateable view is a view that we can use them in INSERT,
+# UPDATE, or DELETE statement.
 # A view should NOT contain any of the following statements to be 
 # an updateable view:
 # DISTINCT
@@ -1912,8 +1918,189 @@ COMMIT;
 
 
 
--- 131. 
- 
+-- 131. Data Modeling
+# Data Modeling: The process of modeling the data to store in database
+# Steps:
+# 	1) Understand and analyze the business requirements: Talk to business stackholders, domain experts, end users, so on
+# 	2) Build a conceptual model: Identify identities, things, or concepts of the business and the relationship between them. (a way to communicate with stackholders | ER/EER diagrams, relational diagrams)
+# 	3) Build a logical model: An abstact data model that is independent of database technologies (just tables and columns needed)
+# 	4) Build a Phisical Model: Implementation of a logial model for a particular database technology (dealing with data types, default values, primary key, nullable, so on)
+
+
+-- 132. Conceptual Models
+# Conceptual model: A way to represent the entities, things, or concepts and their relationships
+# 					Mostly used to understand the problem domain and communicate with stackholders and domain experts
+# 					Must NOT contain any technical aspect of the model
+
+# Two ways to visualize the entities:
+# 	1) Entity-Relationship (ER) Diagrams
+# 	2) Unified Modeling Language (UML)
+
+# Modeling Tools: 
+# 	1) Microsoft Visio
+# 	2) drow.io
+# 	3) LucidCharts
+
+
+-- 133. Logical Models
+# To specify the type of each attribute
+# To specify the type of relationships between entities (one_to_one | one_to_many | many_to_many)
+# To specify the primary key of any entity and relationship
+# Try to have atomic attributes (firstName and lastName instead of fullName)
+
+# Try to delete relational entities:
+# There are two options for the primary key of a relation:
+# 	1) A Composite key of primary keys of the entities in the relationship
+# 	2) New primary key
+# The choice depents on the model scenario,
+# The first option has the advantage of not being able to add repeated record
+# The first option has the disadvantage of redundancy in case of having three or more entities in the relationship
+
+
+-- 134. Primary Key
+# Definition: A primary key is the column or columns that contain values that uniquely identify each row in a table
+# Composite Primary Key: Multiple columns as a primary key to uniquely identify each row, for example two foreign key as a primary key for a relationship (frequently used in relationships)
+# Primary key can change, but it is not recommended to change a primary key. 
+# Primary key shouldn't take a lot of space
+
+
+-- 135. Foreign Key
+# In a relationship we have parent (primary key table) and child (foreign key table). 
+# The child should have primary key of its parent.
+# Foreign keys prevents to have a child record without parent record.
+
+
+
+-- 136. Foreign Key Constraints
+# There are two events for foreign keys:
+# 	1) ON UPDATE: what happen in the child table if a record of the parent table gets updated?
+# 	2) ON DELETE: what happen in the child table if a record of the parent table gets deleted?
+
+# There are four options for each of these events:
+# 	1) NO ACTION
+# 	2) SET NULL
+# 	3) CASCASE
+# 	4) RESTRICTED: reject the event from happening
+
+# For update, we usually use CASCASE
+# For delete, depends on the scenario, most of the time use RESTRICTED
+# In case of RESTRICTED, we are not allowd to delete a record from the parent table, unless we have deleted the child record.
+
+
+-- 137. Normalization
+# Definition: The process of reviewing our design and ensuring that it follows a few predefined rules that prevents data duplication 
+# 			  Normalization has 7 rules called 7 normal forms: Each rule assumes that you have applied previous rules.
+# Notes: 
+# 	1) Don't try to memorize normalization rules, just try to reduce redundancy
+# 	2) Always try to design your database based on your business scenario.
+# 	3) Don't start with creating tables, start with conceptual and logical models and create them based on requirements (not based on your assumption)
+# 	4) Design based on today's problems/requirements, not future problems that may never happen
+# 	5) Build a model based on your problem domain, not the real world.
+
+
+-- 138. First Normal Form (1NF)
+# 1NF: Each cell in a row should have a single value and a table cannot have repeated columns (atomic attributes)
+# If we have a column that can accept multiple values, we should have another table, containing these values and the primary key of the original table as a foreign key 
+# The secondary table has a many_to_many relationship with the original table. 
+
+
+-- 139. Link Table
+# In relational databases we don't have many_to_many relationship. To do so, we have to create a link table.
+# The link table contains primary keys of all identities in the relationship as a foreign key and each identity in the 
+# relationship has one_to_many relationship with the link table.
+
+
+-- 140. Second Normal Form (2NF)
+# 2NF: 1) The design should satisfy the first normal form (1NF)
+# 	   2) Not have any non-pirme attribute that is dependent on any proper subset of any condidate key of the relationship.
+# 		  On the other hand, A non-prime attribute of a relation is an attribute that is not part of any condidate key of the relation.
+# 		  Simply, every table should describe one entity and every column of a table should describe one entity
+# 		  If we are in such a situation that the 2NF is not satisfied, we should bring the attributes out and add it to another table.
+# 	      Note that we shouldn't have any duplicate column.
+
+
+
+-- 141. Third Normal Form (3NF)
+# 3NF: 1) The design should satisfy the second normal form (2NF)
+#	   2) All attributes in a table are determined only by the condidate keys of that relation and not by any non-prime attributes.
+# 	      Simply, we shouldn't have redundant columns in which can be driven from other columns. 
+
+
+-- 142. Synchronizing a Model with a Database
+# To change the design of a database, there are two ways:
+# 	1) Use design mode of each table: 
+# 		This approach only works for databases controlled by a person
+# 		For muli-client databases, any change should be replicated to other clients (consistancy)
+# 	2) Use forward engineering 
+# 		In case we don't have a database and we create a database based on a model.
+
+
+-- 143. Reverse Engineering
+# The process of creating a model based on the current database
+# Used in case we want to change the database and we don't have its model.
+
+
+-- 144. Creating a Database
+CREATE DATABASE IF NOT EXISTS sample_database;
+
+
+-- 145. Dropping a Database
+DROP DATABASE IF EXISTS sample_database;
+
+
+-- 146. Creating Tables
+CREATE DATABASE IF NOT EXISTS supermarket;
+USE supermarket;
+DROP TABLE IF EXISTS customers;
+CREATE TABLE IF NOT EXISTS customers 
+(
+	customer_id 		INT 			PRIMARY KEY 	AUTO_INCREMENT,
+    first_name 			VARCHAR(50)		NOT NULL,
+    last_name 			VARCHAR(50) 	NOT NULL, 
+    points 				INT				DEFAULT 0,
+    email 				VARCHAR(255) 	NOT NULL
+);
+# NOTE: If you consider a column as a PRIMARY KEY, by detault it will be NOT NULL
+
+
+-- 147. Altering Tables
+ALTER TABLE customers
+	ADD COLUMN 		birth_date		DATE 			NOT NULL 	AFTER last_name,
+    ADD COLUMN 		city 			VARCHAR(50) 	NOT NULL 	AFTER email,
+    MODIFY 			email 			VARCHAR(255) 	NOT NULL 	UNIQUE,
+    DROP COLUMN points;
+
+
+-- 148. Creating Relationships
+DROP TABLE IF EXISTS orders;
+CREATE TABLE IF NOT EXISTS orders 
+(
+	order_id 		INT				PRIMARY KEY,
+    customer_id 	INT				NOT NULL,
+    FOREIGN KEY fk_orders_customers(customer_id) REFERENCES customers(customer_id) 
+			ON UPDATE CASCADE 
+            ON DELETE NO ACTION
+);
+# After executing the above query, we will not be able to delete
+# the customers table, first you should delete orders table.
+
+
+-- 149. Altering Primary Key and Foreign Key Constraints
+# If you want to create a relationship after creating a table: 
+ALTER TABLE orders
+	ADD COLUMN description VARCHAR(255),
+	ADD PRIMARY KEY (order_id),
+    DROP PRIMARY KEY,
+    DROP KEY fk_orders_customers,
+    ADD FOREIGN KEY fk_orders_customers (customer_id) REFERENCES customers(customer_id)
+		ON UPDATE CASCADE
+        ON DELETE NO ACTION;
+
+
+
+
+
+
 
 
 
