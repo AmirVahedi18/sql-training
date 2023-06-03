@@ -79,8 +79,12 @@ SELECT *
 FROM orders
 WHERE NOT status = 'Shipped';
 # Note: Execution order of logical conditions (AND, OR, NOT, and parantesis) matters:
-# 		() > NOT > AND > OR
+# 		() > NOT > AND > OR`
 # Note: We can do arithmatic in WHERE statement as well 
+# Note: Any condition that is writen by using OR operator can be writen by IN, but IN has the following benefits:
+# 		IN has more options | IN executes faster than OR | Orders of conditions doesn't matter | Can contain another select statement
+
+
 
 
 -- 10. Arithmatic in WHERE statement
@@ -139,7 +143,10 @@ WHERE contactFirstName LIKE 'B%';
 # Note: Like Options:
 # 		% -> any number of characters
 # 		_ -> single character
-
+# Disadvantages of Using Wildcards:
+# 		Takes longer to run
+# 		Better to use other operators (if possible), like =, <>, <=, etc
+# 		Risk of SQL injection attack
 
 -- 16. LIKE operator 
 SELECT *
@@ -470,6 +477,12 @@ CREATE TABLE orders_archived AS
 SELECT * FROM orders;
 # Note: In the copied table, we don't have a primay key and it is not auto incrimental
 # Note: The second line of the above query is a sub-query, as a part of another query.
+
+# Note: Temporary table is a table that is available only for the duration of a database session 
+# 		or a transaction. They are typically used to store intermediate results that are granted
+# 		during the execution of a complex query or stored procedure:
+CREATE TEMPORARY TABLE orders_archived AS 
+SELECT * FROM orders;
 
 -- 47. Deleting rows and adding selected rows
 DELETE FROM orders_archived 
@@ -836,6 +849,21 @@ WHERE totalPayment < (
 		GROUP BY customerNumber
         ) AS subTable
 );
+
+# Equivalent Qeury:
+SELECT customerNumber, SUM(amount) AS totalPaid
+FROM customers
+INNER JOIN payments USING(customerNumber)
+GROUP BY customerNumber
+HAVING totalPaid < (
+	SELECT AVG(totalPaid)
+	FROM (
+		SELECT SUM(amount) AS totalPaid
+		FROM customers
+		INNER JOIN payments USING(customerNumber)
+		GROUP BY customerNumber
+	) AS T
+)
 
 # Equivalent (Simpler) Query:
 SELECT customerNumber, SUM(amount) AS totalPayment
